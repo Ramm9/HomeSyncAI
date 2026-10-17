@@ -1,4 +1,4 @@
-export const API_BASE_URL = import.meta.env.VITE_API_URL;
+export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api';
 
 
 export const getAuthHeaders = () => {
@@ -26,8 +26,27 @@ export const fetchApi = async (endpoint: string, options: RequestInit = {}) => {
         let errorMessage = 'An error occurred';
         try {
             const errorData = await response.json();
-            errorMessage = errorData.detail || errorData.error || JSON.stringify(errorData);
-        } catch (e) {
+            if (errorData.detail) {
+                errorMessage = errorData.detail;
+            } else if (errorData.error) {
+                errorMessage = errorData.error;
+            } else if (errorData && typeof errorData === 'object') {
+                const messages = Object.entries(errorData).flatMap(([key, value]) => {
+                    const prefix = key === 'non_field_errors' ? '' : `${key}: `;
+                    if (Array.isArray(value)) {
+                        return value.map(msg => `${prefix}${msg}`);
+                    }
+                    return `${prefix}${value}`;
+                });
+                if (messages.length > 0) {
+                    errorMessage = messages.join('\n');
+                } else {
+                    errorMessage = JSON.stringify(errorData);
+                }
+            } else {
+                errorMessage = String(errorData);
+            }
+        } catch {
             errorMessage = response.statusText;
         }
         throw new Error(errorMessage);

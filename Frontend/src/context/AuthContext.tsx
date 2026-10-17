@@ -24,9 +24,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const [token, setToken] = useState<string | null>(localStorage.getItem('access'));
     const [loading, setLoading] = useState(true);
 
+    const logout = () => {
+        setUser(null);
+        setToken(null);
+        localStorage.removeItem('access');
+        localStorage.removeItem('refresh');
+    };
+
     useEffect(() => {
         const fetchProfile = async () => {
-            if (token) {
+            if (token && !user) {
                 try {
                     const userData = await fetchApi('/auth/profile/');
                     setUser(userData);
@@ -38,7 +45,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             setLoading(false);
         };
         fetchProfile();
-    }, [token]);
+    }, [token, user]);
 
     const login = async (newToken: string, refreshToken?: string) => {
         setToken(newToken);
@@ -54,13 +61,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         } catch(e) {
             console.error(e);
         }
-    };
-
-    const logout = () => {
-        setUser(null);
-        setToken(null);
-        localStorage.removeItem('access');
-        localStorage.removeItem('refresh');
     };
 
     const isAuthenticated = !!user && !!token;

@@ -33,23 +33,18 @@ const Details = () => {
     const [showShareModal, setShowShareModal] = useState(false);
     const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-    // Initialize save state
-    useEffect(() => {
-        if (!house) return;
-        try {
-            const saved = JSON.parse(localStorage.getItem("savedProperties") || "[]");
-            setIsSaved(saved.includes(house.id));
-        } catch (err) {
-            console.error(err);
-        }
-    }, [house]);
-
+    // Initialize house details and check if it is saved on the backend
     useEffect(() => {
         const fetchHouse = async () => {
             try {
                 setLoading(true);
-                const data = await fetchApi(`/houses/${id}/`);
+                const [data, savedData] = await Promise.all([
+                    fetchApi(`/houses/${id}/`),
+                    fetchApi('/saved/').catch(() => [])
+                ]);
                 setHouse(data);
+                const savedIds = new Set((savedData || []).map((item: any) => item.house));
+                setIsSaved(savedIds.has(data.id));
                 setLoading(false);
             } catch (err: any) {
                 console.error('Error fetching house details:', err);
@@ -67,30 +62,51 @@ const Details = () => {
         return `₹${(price / 100000).toFixed(2)} L`;
     };
 
-    const toggleSave = () => {
+    const toggleSave = async () => {
         if (!house) return;
         
+        const isCurrentlySaved = isSaved;
+        setIsSaved(!isCurrentlySaved);
+        setToastMessage(isCurrentlySaved ? "Property removed from favorites" : "Property saved to favorites!");
+        
+        // Auto hide toast
+        const toastTimeout = setTimeout(() => {
+            setToastMessage(null);
+        }, 3000);
+
         try {
-            let saved: number[] = JSON.parse(localStorage.getItem("savedProperties") || "[]");
-            
-            if (saved.includes(house.id)) {
+            if (isCurrentlySaved) {
+                // Unsave (DELETE)
+                await fetchApi('/saved/add/', {
+                    method: 'DELETE',
+                    body: JSON.stringify({ house_id: house.id })
+                });
+                
+                // Sync localStorage for fallback compatibility
+                let saved: number[] = JSON.parse(localStorage.getItem("savedProperties") || "[]");
                 saved = saved.filter(savedId => savedId !== house.id);
-                setIsSaved(false);
-                setToastMessage("Property removed from favorites");
+                localStorage.setItem("savedProperties", JSON.stringify(saved));
             } else {
-                saved.push(house.id);
-                setIsSaved(true);
-                setToastMessage("Property saved to favorites!");
+                // Save (POST)
+                await fetchApi('/saved/add/', {
+                    method: 'POST',
+                    body: JSON.stringify({ house_id: house.id })
+                });
+
+                // Sync localStorage for fallback compatibility
+                const saved: number[] = JSON.parse(localStorage.getItem("savedProperties") || "[]");
+                if (!saved.includes(house.id)) {
+                    saved.push(house.id);
+                    localStorage.setItem("savedProperties", JSON.stringify(saved));
+                }
             }
-            
-            localStorage.setItem("savedProperties", JSON.stringify(saved));
-            
-            // Auto hide toast
-            setTimeout(() => {
-                setToastMessage(null);
-            }, 3000);
         } catch (err) {
-            console.error("Failed to save property", err);
+            console.error("Failed to toggle save on backend:", err);
+            // Rollback optimistic state and toast on error
+            setIsSaved(isCurrentlySaved);
+            clearTimeout(toastTimeout);
+            setToastMessage("Failed to update saved status. Please try again.");
+            setTimeout(() => setToastMessage(null), 3000);
         }
     };
 
@@ -299,26 +315,26 @@ const Details = () => {
                             </h3>
 
                             <div className="flex flex-col items-center justify-center relative z-10 mb-6">
-                                <AIScoreRing score={house.score || 85} size={140} />
+                                <AIScoreRing score={house.match_score !== undefined && house.match_score !== null ? house.match_score : (house.score || 85)} size={140} />
                             </div>
-
+ 
                             <div className="space-y-3 relative z-10 text-sm">
                                 <div className="flex justify-between items-center">
                                     <span className="text-slate-400">Budget Match</span>
                                     <div className="w-32 h-2 bg-slate-800 rounded-full overflow-hidden">
-                                        <div className="h-full bg-green-500 w-[95%]" />
+                                        <div className="h-full bg-green-500 transition-all duration-500" style={{ width: `${house.match_breakdown?.budget !== undefined ? (house.match_breakdown.budget / 25 * 100) : 95}%` }} />
                                     </div>
                                 </div>
                                 <div className="flex justify-between items-center">
                                     <span className="text-slate-400">Location Match</span>
                                     <div className="w-32 h-2 bg-slate-800 rounded-full overflow-hidden">
-                                        <div className="h-full bg-yellow-400 w-[70%]" />
+                                        <div className="h-full bg-yellow-400 transition-all duration-500" style={{ width: `${house.match_breakdown?.location !== undefined ? (house.match_breakdown.location / 20 * 100) : 70}%` }} />
                                     </div>
                                 </div>
                                 <div className="flex justify-between items-center">
                                     <span className="text-slate-400">Lifestyle Fit</span>
                                     <div className="w-32 h-2 bg-slate-800 rounded-full overflow-hidden">
-                                        <div className="h-full bg-green-500 w-[88%]" />
+                                        <div className="h-full bg-green-500 transition-all duration-500" style={{ width: `${house.match_breakdown?.lifestyle !== undefined ? (house.match_breakdown.lifestyle / 10 * 100) : 88}%` }} />
                                     </div>
                                 </div>
                             </div>

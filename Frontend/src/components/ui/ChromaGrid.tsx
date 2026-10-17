@@ -77,7 +77,7 @@ const ChromaCard = ({
         // Add a slight delay to allow the ClickSpark animation to render
         // before the page unmounts or navigates away.
         setTimeout(() => {
-            let path = item.url || `/house/${item.id}`;
+            const path = item.url || `/house/${item.id}`;
             navigate(path);
         }, 300); // 300ms is enough to see the #22c55e sparks
     };
@@ -131,6 +131,10 @@ const ChromaCard = ({
                             src={item.image}
                             alt={item.title}
                             loading="lazy"
+                            onError={(e) => {
+                                const target = e.target as HTMLImageElement;
+                                target.src = 'https://images.unsplash.com/photo-1564501049412-61c2a3083791?auto=format&fit=crop&w=800&q=80';
+                            }}
                             className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110"
                         />
                         

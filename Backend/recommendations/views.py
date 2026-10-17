@@ -8,33 +8,66 @@ from django.db.models.functions import ACos, Cos, Sin, Radians
 from .services import get_recommendations_for_user
 
 class RecommendationView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
 
     def get(self, request):
         try:
             city = request.query_params.get('city')
             
-            if not city:
-                return Response({"error": "City parameter is required"}, status=status.HTTP_400_BAD_REQUEST)
+            # Try to get personalized recommendations if user is authenticated
+            if request.user and request.user.is_authenticated:
+                recs = get_recommendations_for_user(request.user, city_filter=city)
+                if recs:
+                    results = []
+                    for rec in recs:
+                        house = rec['house']
+                        results.append({
+                            "id": house.id,
+                            "title": house.title,
+                            "city": house.city,
+                            "area": house.area,
+                            "price": str(house.price),
+                            "bedrooms": house.bedrooms,
+                            "bathrooms": house.bathrooms,
+                            "square_feet": house.square_feet,
+                            "latitude": house.latitude,
+                            "longitude": house.longitude,
+                            "image_url": house.image_url,
+                            "property_type": house.property_type,
+                            "amenities": house.amenities,
+                            "description": house.description,
+                            "match_score": rec['match_score'],
+                            "match_breakdown": rec['match_breakdown']
+                        })
+                    return Response(results, status=status.HTTP_200_OK)
 
-            # Simple city-based filtering
-            houses = House.objects.filter(city__iexact=city)
-
-            # Fallback: if no houses in city, return all houses (up to 10)
-            if not houses.exists():
-                houses = House.objects.all()[:10]
+            # Fallback to city-based filtering or all houses from database
+            if city:
+                houses = House.objects.filter(city__icontains=city)
+                if not houses.exists():
+                    houses = House.objects.all()[:24]
+            else:
+                houses = House.objects.all()[:24]
 
             results = []
             for house in houses:
                 results.append({
+                    "id": house.id,
                     "title": house.title,
                     "city": house.city,
+                    "area": house.area,
                     "price": str(house.price),
                     "bedrooms": house.bedrooms,
+                    "bathrooms": house.bathrooms,
+                    "square_feet": house.square_feet,
                     "latitude": house.latitude,
                     "longitude": house.longitude,
                     "image_url": house.image_url,
-                    "id": house.id
+                    "property_type": house.property_type,
+                    "amenities": house.amenities,
+                    "description": house.description,
+                    "match_score": 100,
+                    "match_breakdown": {"location": 100}
                 })
                 
             return Response(results, status=status.HTTP_200_OK)

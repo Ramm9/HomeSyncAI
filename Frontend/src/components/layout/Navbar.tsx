@@ -37,27 +37,25 @@ const Navbar = () => {
 
                 {/* Desktop Nav */}
                 <div className="hidden md:flex items-center gap-8">
-                    {isAuthenticated && (
-                        <ul className="flex gap-6">
-                            {navLinks.map((link) => (
-                                <li key={link.name}>
-                                    <Link
-                                        to={link.path}
-                                        className={`text-sm font-medium transition-colors hover:text-primary-600 relative ${location.pathname === link.path ? 'text-primary-600' : 'text-slate-600 dark:text-slate-300'
-                                            }`}
-                                    >
-                                        {link.name}
-                                        {location.pathname === link.path && (
-                                            <motion.div
-                                                layoutId="navbar-indicator"
-                                                className="absolute -bottom-1 left-0 right-0 h-0.5 bg-primary-600 rounded-full"
-                                            />
-                                        )}
-                                    </Link>
-                                </li>
-                            ))}
-                        </ul>
-                    )}
+                    <ul className="flex gap-6">
+                        {navLinks.filter(link => link.path !== '/saved' || isAuthenticated).map((link) => (
+                            <li key={link.name}>
+                                <Link
+                                    to={link.path}
+                                    className={`text-sm font-medium transition-colors hover:text-primary-600 relative ${location.pathname === link.path ? 'text-primary-600' : 'text-slate-600 dark:text-slate-300'
+                                        }`}
+                                >
+                                    {link.name}
+                                    {location.pathname === link.path && (
+                                        <motion.div
+                                            layoutId="navbar-indicator"
+                                            className="absolute -bottom-1 left-0 right-0 h-0.5 bg-primary-600 rounded-full"
+                                        />
+                                    )}
+                                </Link>
+                            </li>
+                        ))}
+                    </ul>
                     <div className="flex items-center gap-4 border-l border-slate-200 dark:border-slate-700 pl-4">
                         <ThemeToggle />
                         {!isAuthenticated ? (
@@ -106,7 +104,7 @@ const Navbar = () => {
                         className="md:hidden overflow-hidden bg-white/95 dark:bg-slate-900/95 backdrop-blur-lg border-t border-slate-100 dark:border-slate-800 mt-3 -mx-4 px-4"
                     >
                         <div className="py-4 flex flex-col gap-4">
-                            {isAuthenticated && navLinks.map((link) => (
+                            {navLinks.filter(link => link.path !== '/saved' || isAuthenticated).map((link) => (
                                 <Link
                                     key={link.name}
                                     to={link.path}

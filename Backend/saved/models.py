@@ -11,4 +11,4 @@ class SavedHouse(models.Model):
         unique_together = ('user', 'house')
 
     def __str__(self):
-        return f"{self.user.username} saved {self.house.title}"
+        return f"{self.user.email} saved {self.house.title}"

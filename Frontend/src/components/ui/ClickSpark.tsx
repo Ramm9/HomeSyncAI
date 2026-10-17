@@ -27,6 +27,7 @@ const ClickSpark = ({
   const controls = useAnimation();
   const sparksRef = useRef<{ x: number; y: number; angle: number; velocity: number; size: number; alpha: number; life: number }[]>([]);
   const animationFrameRef = useRef<number>(0);
+  const drawSparksRef = useRef<((ctx: CanvasRenderingContext2D, width: number, height: number) => void) | null>(null);
   const lastClickTime = useRef(0);
 
   const drawSparks = useCallback((ctx: CanvasRenderingContext2D, width: number, height: number) => {
@@ -52,11 +53,15 @@ const ClickSpark = ({
     });
 
     if (hasActiveSparks) {
-        animationFrameRef.current = requestAnimationFrame(() => drawSparks(ctx, width, height));
+        animationFrameRef.current = requestAnimationFrame(() => drawSparksRef.current?.(ctx, width, height));
     } else {
         ctx.clearRect(0, 0, width, height); // Clear on end
     }
   }, [sparkColor, duration, extraScale]);
+
+  useEffect(() => {
+    drawSparksRef.current = drawSparks;
+  }, [drawSparks]);
 
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const now = performance.now();

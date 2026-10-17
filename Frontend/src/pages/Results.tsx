@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Filter, Map as MapIcon, ChevronDown } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Skeleton } from '../components/ui/Spinner';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { ChromaGrid, type ChromaGridItem } from '../components/ui/ChromaGrid';
 import { fetchApi } from '../utils/api';
 import { GoogleMap, useJsApiLoader, Marker } from "@react-google-maps/api";
@@ -16,83 +16,91 @@ const mapContainerStyle = {
 // The PropertyCardRenderer has been replaced by the ChromaGrid component which encapsulates the card UI.
 
 const Results = () => {
+    const [searchParams] = useSearchParams();
     const [loading, setLoading] = useState(true);
     const [houses, setHouses] = useState<any[]>([]);
     const [viewMode, setViewMode] = useState<'grid' | 'map'>('grid');
     const [error, setError] = useState<string | null>(null);
+    const [currentCity, setCurrentCity] = useState<string>('');
 
     const fetchRecommendations = async () => {
         try {
             setLoading(true);
+            setError(null);
             
-            // 1. Read search data from localStorage
-            let storageData = localStorage.getItem("searchData");
-            
-            // Fallback: Check if we have wizard_data and recover from it
-            if (!storageData) {
+            // 1. Read city from search URL param or localStorage
+            let city = searchParams.get('city') || '';
+            if (!city) {
+                const storageData = localStorage.getItem("searchData");
+                if (storageData) {
+                    try {
+                        const parsed = JSON.parse(storageData);
+                        city = parsed.city || '';
+                    } catch (e) {
+                        console.error("Error parsing searchData:", e);
+                    }
+                }
+            }
+            if (!city) {
                 const wizardDataStr = localStorage.getItem("wizard_data");
                 if (wizardDataStr) {
                     try {
-                        const wizardData = JSON.parse(wizardDataStr);
-                        if (wizardData.location) {
-                            const recoveredData = {
-                                city: wizardData.location.city || "Bengaluru",
-                                lat: wizardData.location.lat,
-                                lng: wizardData.location.lng,
-                            };
-                            localStorage.setItem("searchData", JSON.stringify(recoveredData));
-                            storageData = JSON.stringify(recoveredData);
-                        }
+                        const parsed = JSON.parse(wizardDataStr);
+                        city = parsed.location?.city || '';
                     } catch (e) {
                         console.error("Error parsing wizard_data:", e);
                     }
                 }
             }
 
-            if (!storageData) {
-                setError("No search metadata found. Please complete the search wizard to select a location first.");
-                setLoading(false);
-                return;
+            setCurrentCity(city);
+
+            // 2. Fetch recommendations or public houses from backend
+            let rawData: any = null;
+            if (city) {
+                try {
+                    rawData = await fetchApi(`/houses/recommendations/?city=${encodeURIComponent(city)}`);
+                } catch (recErr) {
+                    console.warn("Recommendations endpoint returned error, falling back to public houses API:", recErr);
+                }
             }
 
-            const searchData = JSON.parse(storageData);
-            const { city } = searchData;
-
-            if (!city) {
-                setError("No city selected. Please try the wizard again.");
-                setLoading(false);
-                return;
+            // Fallback to /houses/?city=... or /houses/ if recommendations returned no items
+            const initialList = Array.isArray(rawData) ? rawData : (rawData?.results || []);
+            if (initialList.length === 0) {
+                const houseUrl = city ? `/houses/?city=${encodeURIComponent(city)}&page_size=50` : `/houses/?page_size=50`;
+                rawData = await fetchApi(houseUrl);
             }
 
-            // 2. Fetch recommendations using GET with city
-            const [data, savedData] = await Promise.all([
-                fetchApi(`/houses/by-city/?city=${city}`),
-                fetchApi('/saved/')
-            ]);
+            // Fetch saved properties if user is logged in
+            const savedData = await fetchApi('/saved/').catch(() => []);
+            const rawSaved = Array.isArray(savedData) ? savedData : (savedData?.results || []);
+            const savedIds = new Set(rawSaved.map((item: any) => item?.house).filter(Boolean));
             
-            const savedIds = new Set(savedData.map((item: any) => item.house));
-            
-            // Map the API response to fit the frontend structure
-            // Note: house.values() in Django returns raw DB fields
-            const mappedHouses = data.map((item: any) => ({
+            // Map the API response to fit the frontend structure using actual model fields
+            const rawHouses = Array.isArray(rawData) ? rawData : (rawData?.results || []);
+            const mappedHouses = rawHouses.map((item: any) => ({
                 id: item.id,
                 title: item.title,
-                price: parseFloat(item.price),
-                score: 100, // Static score for simple system
+                price: parseFloat(item.price) || 0,
+                score: item.match_score || 95, // Dynamic score from AI matches or 95 default
                 beds: item.bedrooms,
                 baths: item.bathrooms,
                 area: item.square_feet,
-                location: item.city,
+                location: item.area ? `${item.area}, ${item.city}` : item.city,
                 latitude: item.latitude,
                 longitude: item.longitude,
-                image: item.image_url || '/default-house.jpg',
+                image: item.image_url || 'https://images.unsplash.com/photo-1564501049412-61c2a3083791?auto=format&fit=crop&w=800&q=80',
                 isSaved: savedIds.has(item.id),
+                propertyType: item.property_type,
+                amenities: item.amenities || [],
+                description: item.description || '',
                 details: item
             }));
             setHouses(mappedHouses);
         } catch (err: any) {
-            console.error('Error fetching recommendations:', err);
-            setError(err.message || 'Failed to load recommendations');
+            console.error('Error fetching houses:', err);
+            setError(err.message || 'Failed to load house listings');
         } finally {
             setLoading(false);
         }
@@ -100,7 +108,7 @@ const Results = () => {
 
     useEffect(() => {
         fetchRecommendations();
-    }, []);
+    }, [searchParams]);
 
     const toggleSave = async (id: number | string) => {
         const numId = Number(id);
@@ -148,10 +156,12 @@ const Results = () => {
         try {
             const wiz = JSON.parse(localStorage.getItem("wizard_data") || "{}");
             if (wiz.budget) {
-                minBudget = wiz.budget.min || 0;
-                maxBudget = wiz.budget.max || Infinity;
+                minBudget = Array.isArray(wiz.budget) ? wiz.budget[0] : (wiz.budget.min || 0);
+                maxBudget = Array.isArray(wiz.budget) ? wiz.budget[1] : (wiz.budget.max || Infinity);
             }
-        } catch (e) { }
+        } catch (e) {
+            console.error("Error parsing budget from wizard_data:", e);
+        }
     }
 
     const inBudget = houses.filter((p) => p.price >= minBudget && p.price <= maxBudget);
@@ -211,8 +221,12 @@ const Results = () => {
             <div className="max-w-7xl mx-auto px-4 lg:px-8 mt-8">
                 <div className="flex justify-between items-end mb-8">
                     <div>
-                        <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Your Perfect Matches</h1>
-                        <p className="text-slate-500 dark:text-slate-400 mt-2">We found properties that closely match your lifestyle and budget.</p>
+                        <h1 className="text-3xl font-bold text-slate-900 dark:text-white">
+                            {currentCity ? `Properties in ${currentCity}` : "All Available Properties"}
+                        </h1>
+                        <p className="text-slate-500 dark:text-slate-400 mt-2">
+                            {currentCity ? `We found properties matching your search in ${currentCity}.` : "Explore real properties directly fetched from our verified database."}
+                        </p>
                     </div>
                 </div>
 
@@ -233,14 +247,14 @@ const Results = () => {
                     </div>
                 ) : error ? (
                     <div className="text-center py-20 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
-                        <div className="text-red-500 mb-4 text-lg font-semibold">Error Loading Recommendations</div>
+                        <div className="text-red-500 mb-4 text-lg font-semibold">Error Loading Listings</div>
                         <p className="text-slate-500 dark:text-slate-400 mb-8">{error}</p>
                         <Button onClick={fetchRecommendations} variant="primary">Try Again</Button>
                     </div>
                 ) : houses.length === 0 ? (
                     <div className="text-center py-20 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
-                        <div className="text-slate-400 mb-4 text-lg font-semibold">No Recommendations Found</div>
-                        <p className="text-slate-500 dark:text-slate-400 mb-8">Try adjusting your preferences to find more matches.</p>
+                        <div className="text-slate-400 mb-4 text-lg font-semibold">No Properties Found</div>
+                        <p className="text-slate-500 dark:text-slate-400 mb-8">Try adjusting your filters or browse listings across other cities.</p>
                         <Link to="/wizard">
                             <Button variant="primary">Go to Wizard</Button>
                         </Link>
@@ -256,15 +270,27 @@ const Results = () => {
                             <div>
                                 {inBudget.length > 0 ? (
                                     <>
-                                        <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-6 border-b border-slate-200 dark:border-slate-700 pb-2">In Your Budget</h2>
+                                        <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-6 border-b border-slate-200 dark:border-slate-700 pb-2">
+                                            {userBudget ? "In Your Budget" : "Featured Properties"}
+                                        </h2>
                                         <ChromaGrid 
                                             items={inBudget.map(mapHouseToChromaItem)} 
                                             onToggleSave={toggleSave} 
                                         />
                                     </>
+                                ) : houses.length > 0 ? (
+                                    <>
+                                        <div className="bg-slate-50 dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 text-center mb-8">
+                                            <p className="text-slate-600 dark:text-slate-400 font-medium">No properties match your custom price bracket. Showing all available homes below.</p>
+                                        </div>
+                                        <ChromaGrid 
+                                            items={houses.map(mapHouseToChromaItem)} 
+                                            onToggleSave={toggleSave} 
+                                        />
+                                    </>
                                 ) : (
                                     <div className="bg-slate-50 dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 text-center mb-8">
-                                        <p className="text-slate-600 dark:text-slate-400 font-medium">No properties found in your exact budget. Showing nearby price options.</p>
+                                        <p className="text-slate-600 dark:text-slate-400 font-medium">No properties found.</p>
                                     </div>
                                 )}
                             </div>

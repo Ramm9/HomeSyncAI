@@ -27,12 +27,14 @@ const AnimatedRoutes = () => {
                 <Route path="/login" element={<PageTransition><Login /></PageTransition>} />
                 <Route path="/signup" element={<PageTransition><Signup /></PageTransition>} />
 
+                {/* Public Routes */}
+                <Route path="/" element={<PageTransition><Landing /></PageTransition>} />
+                <Route path="/home" element={<PageTransition><Landing /></PageTransition>} />
+                <Route path="/results" element={<PageTransition><Results /></PageTransition>} />
+                <Route path="/house/:id" element={<PageTransition><Details /></PageTransition>} />
+
                 {/* Protected Routes */}
-                <Route path="/" element={<ProtectedRoute><PageTransition><Landing /></PageTransition></ProtectedRoute>} />
-                <Route path="/home" element={<ProtectedRoute><PageTransition><Landing /></PageTransition></ProtectedRoute>} />
                 <Route path="/wizard" element={<ProtectedRoute><PageTransition><Wizard /></PageTransition></ProtectedRoute>} />
-                <Route path="/results" element={<ProtectedRoute><PageTransition><Results /></PageTransition></ProtectedRoute>} />
-                <Route path="/house/:id" element={<ProtectedRoute><PageTransition><Details /></PageTransition></ProtectedRoute>} />
                 <Route path="/saved" element={<ProtectedRoute><PageTransition><Saved /></PageTransition></ProtectedRoute>} />
             </Routes>
         </AnimatePresence>

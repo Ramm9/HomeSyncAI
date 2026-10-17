@@ -90,3 +90,49 @@ class HouseViewSet(viewsets.ReadOnlyModelViewSet):
             queryset = queryset.filter(property_type__iexact=property_type)
 
         return queryset
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            data = serializer.data
+            if request.user and request.user.is_authenticated:
+                from preferences.models import UserPreference
+                from recommendations.services import calculate_match_score
+                try:
+                    preferences = UserPreference.objects.get(user=request.user)
+                    for item, house_obj in zip(data, page):
+                        match_info = calculate_match_score(house_obj, preferences)
+                        item['match_score'] = match_info['score']
+                        item['match_breakdown'] = match_info['breakdown']
+                except UserPreference.DoesNotExist:
+                    pass
+            return self.get_paginated_response(data)
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        data = serializer.data
+
+        # Calculate match score if user is authenticated
+        if request.user and request.user.is_authenticated:
+            from preferences.models import UserPreference
+            from recommendations.services import calculate_match_score
+            try:
+                preferences = UserPreference.objects.get(user=request.user)
+                match_data = calculate_match_score(instance, preferences)
+                data['match_score'] = match_data['score']
+                data['match_breakdown'] = match_data['breakdown']
+            except UserPreference.DoesNotExist:
+                data['match_score'] = None
+                data['match_breakdown'] = None
+        else:
+            data['match_score'] = None
+            data['match_breakdown'] = None
+
+        return Response(data)

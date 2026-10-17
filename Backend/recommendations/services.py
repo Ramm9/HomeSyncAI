@@ -110,13 +110,17 @@ def calculate_match_score(house, preferences):
 
     return {"score": score, "breakdown": breakdown}
 
-def get_recommendations_for_user(user):
+def get_recommendations_for_user(user, city_filter=None):
     try:
         preferences = UserPreference.objects.get(user=user)
     except UserPreference.DoesNotExist:
         return []
 
     houses = House.objects.all()
+    if city_filter:
+        houses = houses.filter(city__icontains=city_filter)
+    elif preferences.city:
+        houses = houses.filter(city__icontains=preferences.city)
     
     # Strict filtering by location if coordinates are provided
     if preferences.latitude and preferences.longitude:

@@ -20,7 +20,7 @@ export const Slider = ({ min, max, step = 1, value, onChange, formatValue, class
         return ((val - min) / (max - min)) * 100;
     };
 
-    const handleMove = (clientX: number) => {
+    const handleMove = React.useCallback((clientX: number) => {
         if (!containerRef.current || !isDragging) return;
 
         const rect = containerRef.current.getBoundingClientRect();
@@ -36,9 +36,9 @@ export const Slider = ({ min, max, step = 1, value, onChange, formatValue, class
         } else {
             onChange([value[0], Math.max(newValue, value[0] + step)]);
         }
-    };
+    }, [min, max, step, value, onChange, isDragging]);
 
-    const handlePointerMove = (e: React.PointerEvent | PointerEvent) => {
+    const handlePointerMove = React.useCallback((e: React.PointerEvent | PointerEvent) => {
         if (isDragging) {
             handleMove((e as PointerEvent).clientX);
             // Simulating subtle haptic feedback for steps (works in browsers that support it when not standard API, fake it visually)
@@ -46,11 +46,11 @@ export const Slider = ({ min, max, step = 1, value, onChange, formatValue, class
                 // window.navigator.vibrate(2); // very subtle tick (optional)
             }
         }
-    };
+    }, [isDragging, handleMove]);
 
-    const handlePointerUp = () => {
+    const handlePointerUp = React.useCallback(() => {
         setIsDragging(null);
-    };
+    }, []);
 
     React.useEffect(() => {
         if (isDragging) {
@@ -64,7 +64,7 @@ export const Slider = ({ min, max, step = 1, value, onChange, formatValue, class
             window.removeEventListener('pointermove', handlePointerMove);
             window.removeEventListener('pointerup', handlePointerUp);
         };
-    }, [isDragging, value]);
+    }, [isDragging, handlePointerMove, handlePointerUp]);
 
     const minPos = getPercentage(value[0]);
     const maxPos = getPercentage(value[1]);

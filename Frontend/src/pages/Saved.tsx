@@ -15,32 +15,30 @@ const Saved = () => {
     const fetchSavedHouses = async () => {
         try {
             setLoading(true);
-            const savedIds: number[] = JSON.parse(localStorage.getItem("savedProperties") || "[]");
+            const savedData = await fetchApi('/saved/');
             
-            if (savedIds.length === 0) {
-                setSavedHouses([]);
-                setLoading(false);
-                return;
-            }
-
-            // Fetch each saved property details
-            const promises = savedIds.map(id => fetchApi(`/houses/${id}/`).catch(() => null));
-            const results = await Promise.all(promises);
+            const rawList = Array.isArray(savedData) ? savedData : (savedData?.results || []);
             
-            // Filter out any failed requests (nulls) and map
-            const validData = results.filter(house => house !== null);
+            // Sync localStorage with backend saved items for legacy compatibility
+            const savedIds = rawList.map((item: any) => item.house).filter(Boolean);
+            localStorage.setItem("savedProperties", JSON.stringify(savedIds));
             
-            const mappedData = validData.map((item: any) => ({
-                id: item.id,
-                title: item.title,
-                price: parseFloat(item.price),
-                score: item.score || 85, // Fallback score
-                beds: item.bedrooms,
-                baths: item.bathrooms,
-                area: item.square_feet,
-                location: `${item.area}, ${item.city}`,
-                image: item.image_url || '/default-house.jpg',
-            }));
+            const mappedData = rawList
+                .filter((item: any) => item && item.house_details)
+                .map((item: any) => {
+                    const details = item.house_details;
+                    return {
+                        id: details.id,
+                        title: details.title,
+                        price: parseFloat(details.price) || 0,
+                        score: details.score || 85, // Fallback score
+                        beds: details.bedrooms,
+                        baths: details.bathrooms,
+                        area: details.square_feet,
+                        location: `${details.area || ''}, ${details.city || ''}`,
+                        image: details.image_url || '/default-house.jpg',
+                    };
+                });
             
             setSavedHouses(mappedData);
             setError(null);
@@ -68,11 +66,20 @@ const Saved = () => {
         setSavedHouses(prev => prev.filter(h => h.id !== numId));
 
         try {
+            // Delete from backend database
+            await fetchApi('/saved/add/', {
+                method: 'DELETE',
+                body: JSON.stringify({ house_id: numId })
+            });
+
+            // Sync localStorage
             let saved: number[] = JSON.parse(localStorage.getItem("savedProperties") || "[]");
             saved = saved.filter(savedId => savedId !== numId);
             localStorage.setItem("savedProperties", JSON.stringify(saved));
         } catch (err) {
-            console.error('Error removing house from local storage:', err);
+            console.error('Error removing house from backend:', err);
+            // Re-fetch database entries on failure to restore state
+            fetchSavedHouses();
         }
     };
 
