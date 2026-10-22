@@ -23,6 +23,7 @@ numpy==2.4.3
 packaging==26.0
 pandas==3.0.1
 pillow==12.1.1
+psycopg[binary]==3.3.6
 psycopg2-binary==2.9.11
 PyJWT==2.11.0
 pyparsing==3.3.2
