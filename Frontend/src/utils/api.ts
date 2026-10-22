@@ -1,4 +1,12 @@
-export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api';
+const rawBaseUrl: string =
+    import.meta.env.VITE_API_BASE_URL ||
+    import.meta.env.VITE_API_URL ||
+    'http://127.0.0.1:8000/api';
+
+const trimmedBaseUrl = rawBaseUrl.replace(/\/+$/, '');
+export const API_BASE_URL = trimmedBaseUrl.endsWith('/api')
+    ? trimmedBaseUrl
+    : `${trimmedBaseUrl}/api`;
 
 
 export const getAuthHeaders = () => {
@@ -17,7 +25,8 @@ export const fetchApi = async (endpoint: string, options: RequestInit = {}) => {
         ...(options.headers as Record<string, string>),
     };
 
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+    const response = await fetch(`${API_BASE_URL}${cleanEndpoint}`, {
         ...options,
         headers,
     });

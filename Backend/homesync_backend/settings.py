@@ -25,14 +25,36 @@ load_dotenv(BASE_DIR / ".env")
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-dev-key")
+IS_RENDER = os.getenv("RENDER", "false").lower() in ("true", "1")
+DEBUG = os.getenv("DEBUG", "false" if IS_RENDER else "true").lower() in ("true", "1", "yes")
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv("DEBUG", "True") == "True"
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = "django-insecure-dev-key-not-for-production"
+    else:
+        raise ValueError(
+            "SECRET_KEY environment variable is required in production (DEBUG=False). "
+            "Please configure SECRET_KEY in your hosting environment."
+        )
 
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1,testserver").split(",")
-if DEBUG:
+allowed_hosts_env = os.getenv("ALLOWED_HOSTS")
+if allowed_hosts_env:
+    ALLOWED_HOSTS = [host.strip() for host in allowed_hosts_env.split(",") if host.strip()]
+elif DEBUG:
     ALLOWED_HOSTS = ["*"]
+else:
+    ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
+
+RENDER_EXTERNAL_HOSTNAME = os.getenv("RENDER_EXTERNAL_HOSTNAME")
+if RENDER_EXTERNAL_HOSTNAME and RENDER_EXTERNAL_HOSTNAME not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
+
+# Reverse proxy / HTTPS detection on Render
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+if not DEBUG:
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
 
 
 
@@ -94,7 +116,6 @@ WSGI_APPLICATION = "homesync_backend.wsgi.application"
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
 DATABASE_URL = os.getenv("DATABASE_URL")
-
 if DATABASE_URL:
     DATABASES = {
         "default": dj_database_url.parse(
@@ -104,6 +125,11 @@ if DATABASE_URL:
         )
     }
 else:
+    if not DEBUG:
+        raise ValueError(
+            "DATABASE_URL environment variable is required in production (DEBUG=False). "
+            "HomeSyncAI will not silently fall back to SQLite when PostgreSQL configuration is missing."
+        )
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
@@ -147,29 +173,58 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = '/static/'
-STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
 
 # Custom user model
 AUTH_USER_MODEL = "accounts.User"
 
 # CORS Setup
-CORS_ALLOW_ALL_ORIGINS = DEBUG
-CORS_ALLOWED_ORIGINS = [
+CORS_ALLOW_ALL_ORIGINS = False
+
+default_dev_origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "https://homesyncai.vercel.app",  # Placeholder: User to update with actual domain
 ]
 
-# Add any additional origins from environment variables
-extra_origins = os.getenv("CORS_ALLOWED_ORIGINS")
-if extra_origins:
-    CORS_ALLOWED_ORIGINS.extend(extra_origins.split(","))
+cors_env = os.getenv("CORS_ALLOWED_ORIGINS")
+if cors_env:
+    CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_env.split(",") if origin.strip()]
+    if DEBUG:
+        for dev_origin in default_dev_origins:
+            if dev_origin not in CORS_ALLOWED_ORIGINS:
+                CORS_ALLOWED_ORIGINS.append(dev_origin)
+else:
+    CORS_ALLOWED_ORIGINS = default_dev_origins
 
-if not DEBUG:
-    # Ensure no empty strings in the list
-    CORS_ALLOWED_ORIGINS = [origin for origin in CORS_ALLOWED_ORIGINS if origin]
+CORS_ALLOW_CREDENTIALS = True
+
+# CSRF Trusted Origins
+csrf_trusted_env = os.getenv("CSRF_TRUSTED_ORIGINS")
+if csrf_trusted_env:
+    CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in csrf_trusted_env.split(",") if origin.strip()]
+else:
+    CSRF_TRUSTED_ORIGINS = []
+
+# Include CORS allowed origins in CSRF trusted origins
+for origin in CORS_ALLOWED_ORIGINS:
+    if (origin.startswith("http://") or origin.startswith("https://")) and origin not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(origin)
+
+if RENDER_EXTERNAL_HOSTNAME:
+    render_origin = f"https://{RENDER_EXTERNAL_HOSTNAME}"
+    if render_origin not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(render_origin)
 
 
 # Django REST Framework Settings

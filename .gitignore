@@ -9,6 +9,7 @@ Frontend/.env
 Frontend/.env.*
 !.env.example
 !Backend/.env.example
+!Frontend/.env.example
 
 # Python / Django
 Backend/db.sqlite3
